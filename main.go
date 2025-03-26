@@ -2,19 +2,34 @@ package main
 
 import (
 	"fmt"
+	"go_final/model"
 
+	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
 func main() {
 
-	dsn := "cp_65011212189:65011212189@csmsu@tcp(202.28.34.197)/myadmin/sql.php?server=1&db=cp_65011212189&table=customer&pos=0"
-	dialactor := mysql.Open(dsn)
-	_, err := gorm.Open(dialactor)
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Connection Successful")
+	fmt.Println(viper.Get("mysql.dsn"))
+	dsn := viper.GetString("mysql.dsn")
+	dialactor := mysql.Open(dsn)
+	db, err := gorm.Open(dialactor) // Declaration of db connection
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Connection successful")
 
+	customer := []model.Customer{}
+	result := db.Find(&customer)
+	if result.Error != nil {
+		panic(result.Error)
+	}
+	fmt.Println(customer)
 }
