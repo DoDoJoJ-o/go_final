@@ -3,11 +3,16 @@ package controller
 import (
 	"go_final/model"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// JWT Secret Key (in a real application, this should be stored securely and not hardcoded)
+var jwtSecretKey = []byte("your_secret_key_here")
 
 type LoginController struct {
 	DB *gorm.DB
@@ -61,7 +66,7 @@ func (lc *LoginController) Login(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT token (you'll need to implement token generation)
+	// Generate JWT token
 	token, err := generateJWTToken(customer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -82,15 +87,91 @@ func (lc *LoginController) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// Helper function to generate JWT token
+// Generate JWT Token
 func generateJWTToken(customer model.Customer) (string, error) {
-	// Implement JWT token generation logic
-	// This is a placeholder - you'll need to use a JWT library like golang-jwt/jwt
-	return "", nil
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"customer_id": customer.CustomerID,
+		"email":       customer.Email,
+		"exp":         time.Now().Add(time.Hour * 24).Unix(), // Token expires in 24 hours
+	})
+
+	// Sign and get the complete encoded token as a string
+	tokenString, err := token.SignedString(jwtSecretKey)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
 }
 
 // Utility function to hash password (for registration)
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	return string(bytes), err
+}
+
+// Middleware to validate JWT token
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.GetHeader("Authorization")
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authorization token is missing",
+			})
+			c.Abort()
+			return
+		}
+
+		// Remove "Bearer " prefix if present
+		if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+			tokenString = tokenString[7:]
+		}
+
+		// Parse token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// Verify signing method
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return jwtSecretKey, nil
+		})
+
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid token",
+			})
+			c.Abort()
+			return
+		}
+
+		// Verify token claims
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			// You can add additional verification if needed
+			c.Set("customer_id", claims["customer_id"])
+			c.Set("email", claims["email"])
+			c.Next()
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid token claims",
+			})
+			c.Abort()
+		}
+	}
+}
+
+// Example router setup
+func SetupRoutes(r *gin.Engine, db *gorm.DB) {
+	loginController := NewLoginController(db)
+
+	// Public routes
+	r.POST("/login", loginController.Login)
+
+	// Protected routes example
+	protectedRoutes := r.Group("/")
+	protectedRoutes.Use(AuthMiddleware())
+	{
+		// Add protected routes here
+		// Example: protectedRoutes.GET("/profile", getProfileHandler)
+	}
 }

@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"go_final/controller"
 	"go_final/model"
 
+	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -32,4 +34,8 @@ func main() {
 		panic(result.Error)
 	}
 	fmt.Println(customer)
+
+	router := gin.Default()
+	controller.SetupRoutes(router, db)
+	router.Run()
 }
